@@ -4,6 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ライフプランブロック</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ライフプラン">
+<meta name="theme-color" content="#1e3a5f">
+<link rel="icon" id="fav-icon" type="image/png" href="">
+<link rel="apple-touch-icon" id="touch-icon" href="">
+<script>
+/* アプリのアイコン：緑の地に、期間ブロック3つ（水色・白・黄色）を横に並べた絵 */
+(function(){
+  function rr(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.lineTo(x+w-r,y);g.arcTo(x+w,y,x+w,y+r,r);g.lineTo(x+w,y+h-r);g.arcTo(x+w,y+h,x+w-r,y+h,r);g.lineTo(x+r,y+h);g.arcTo(x,y+h,x,y+h-r,r);g.lineTo(x,y+r);g.arcTo(x,y,x+r,y,r);g.closePath();g.fill()}
+  function makeIcon(sz){
+    var c=document.createElement('canvas');c.width=c.height=sz;
+    var g=c.getContext('2d'),s=sz/64;
+    var bg=g.createLinearGradient(0,0,sz,sz);bg.addColorStop(0,'#1fc88c');bg.addColorStop(1,'#12936a');
+    g.fillStyle=bg;rr(g,0,0,sz,sz,12*s);
+    [['#8fd3ff',6],['#ffffff',24],['#ffe066',42]].forEach(function(a){g.fillStyle=a[0];rr(g,a[1]*s,18*s,16*s,28*s,3*s)});
+    g.fillStyle='rgba(255,255,255,0.9)';rr(g,6*s,50*s,52*s,3*s,1.5*s);
+    return c.toDataURL('image/png');
+  }
+  document.addEventListener('DOMContentLoaded',function(){
+    document.getElementById('fav-icon').href=makeIcon(64);
+    document.getElementById('touch-icon').href=makeIcon(180);
+  });
+})();
+</script>
 <style>
 :root{
   --bg:#f3f5f8;--card:#fff;--ink:#1f2937;--sub:#6b7280;--line:#e3e7ec;--input:#fbfcfd;
