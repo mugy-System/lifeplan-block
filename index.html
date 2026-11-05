@@ -101,6 +101,8 @@ small.hint{color:var(--sub);font-size:12px}
 .inv{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
 .invrow{display:grid;grid-template-columns:auto 1.3fr 1fr .9fr 1fr .8fr auto;gap:10px;align-items:end}
 .invrow .seg{align-self:end;height:38px}
+.invhold{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:13px}
+.invhold .unit{width:130px}
 .invres{margin-top:8px;font-size:13px;color:var(--sub)}
 .invres b{color:var(--ink)}
 .bcalc .sum small{display:block;font-size:11px;color:var(--sub)}
@@ -314,7 +316,7 @@ input.negin::placeholder{color:#e2978d}
 
     <section class="card">
       <h2><span class="no">3</span>資産運用（積立）</h2>
-      <p class="lead">積立か一括かを選び、期間・金額・年利を入力します。積立額は貯蓄から差し引きません。一括投資の金額は、投資する年に預金から差し引きます。期間が終わった後は、終わった時点の金額のまま計算します。</p>
+      <p class="lead">積立か一括かを選び、期間・金額・年利を入力します。積立額は貯蓄から差し引きません。一括投資の金額は、投資する年に預金から差し引きます。積立は、積立が終わったあとも運用だけ続ける期間を入れられます。期間が終わった後は、終わった時点の金額のまま計算します。</p>
       <div id="invests"></div>
       <button class="add" data-act="addInvest">＋ 資産運用を追加</button>
     </section>
@@ -436,9 +438,16 @@ function invPrincipal(v){return isLump(v)?num(v.amount):num(v.monthly)*12*Math.m
 function invValue(v,o,by){
   if(isLump(v)){const t=(by+o)-invStart(v,by);return t>0?num(v.amount)*Math.pow(1+num(v.rate)/100,Math.min(t,Math.max(0,num(v.years)))):0}
   const yrs=Math.max(0,num(v.years)),mon=num(v.monthly),rm=num(v.rate)/100/12;
-  const months=Math.min(Math.max(((by+o)-invStart(v,by))*12,0),yrs*12);
-  return rm?mon*(Math.pow(1+rm,months)-1)/rm:mon*months;
+  const t=((by+o)-invStart(v,by))*12;
+  const months=Math.min(Math.max(t,0),yrs*12);
+  const fv=rm?mon*(Math.pow(1+rm,months)-1)/rm:mon*months;
+  /* 積立終了後は、積立なしで運用だけ続ける */
+  const grow=Math.min(Math.max(t-yrs*12,0),holdYrs(v)*12);
+  return fv*Math.pow(1+holdRate(v)/100/12,grow);
 }
+/* 積立終了後の年利：空欄なら積立中と同じ年利 */
+function holdRate(v){return v.holdRate===''||v.holdRate==null?num(v.rate):num(v.holdRate)}
+function holdYrs(v){return isLump(v)?0:Math.max(0,num(v.hold))}
 function invContrib(v,o,by){const st=invStart(v,by),y=by+o;return isLump(v)&&y===st?num(v.amount):0}
 function calc(){
   const allAssets=S.members.flatMap(m=>m.assets);
@@ -616,7 +625,7 @@ function update(){
   document.querySelectorAll('[data-auto]').forEach(el=>{const v=auto[el.dataset.auto];if(v!=null)el.placeholder='自動：'+fmtN(v)});
   // 金額入力欄：マイナス（入力値、空欄なら自動値）を赤文字に
   document.querySelectorAll('input.num[data-k]').forEach(el=>{
-    if(/\.(age|fromAge|toAge|year|years|start|rate|from|to)$/.test(el.dataset.k))return;
+    if(/\.(age|fromAge|toAge|year|years|start|rate|from|to|hold|holdRate)$/.test(el.dataset.k))return;
     const v=el.value!==''?num(el.value):(el.dataset.auto&&auto[el.dataset.auto]!=null?auto[el.dataset.auto]:0);
     el.classList.toggle('negin',v<0);
   });
@@ -624,7 +633,7 @@ function update(){
   $('#monthly').textContent=C.exp?`月あたり 約${fmtN(C.exp/12)}万円`:'';
   for(let i=0;i<=S.blocks.length;i++){const el=$('#bd-'+i);if(el)el.innerHTML=boundaryHTML(C,i)}
   for(let i=0;i<S.blocks.length;i++){const el=$('#bc-'+i);if(el)el.innerHTML=calcHTML(C,i)}
-  (S.invests||[]).forEach(v=>{const el=$('#ivr-'+v.id);if(el)el.innerHTML=invResText(v,C.by)});
+  (S.invests||[]).forEach(v=>{const el=$('#ivr-'+v.id);if(el)el.innerHTML=invResText(v,C.by);const hr=$('#ivhr-'+v.id);if(hr)hr.placeholder=String(num(v.rate))});
   const L=labels();
   S.members.forEach((m,i)=>{const el=$('#mt-'+m.id);if(el){const a=ageOf(m);el.innerHTML=esc(L[i])+(a!=null?`<small>${ageLong(a)}</small>`:'')}});
   $('#finalLbl').innerHTML=`最終的な資産<small style="display:block;font-size:12px;opacity:.75">${C.by+C.totalYears}年時点（${C.totalYears}年後）</small>`;
@@ -644,13 +653,16 @@ function renderInvests(){
       <label class="f"><span>年利</span><div class="unit"><input type="text" class="num" data-k="iv.${v.id}.rate" value="${esc(v.rate)}" placeholder="0"><em>%</em></div></label>
       <button class="x" data-act="delInvest" data-id="${v.id}" title="削除">×</button>
     </div>
+    ${L?'':`<div class="invhold"><span>積立が終わったあとも運用を続ける期間</span><div class="unit"><input type="text" class="num" data-k="iv.${v.id}.hold" value="${esc(v.hold||'')}"><em>年間</em></div><span>その間の年利</span><div class="unit"><input type="text" class="num" id="ivhr-${v.id}" data-k="iv.${v.id}.holdRate" value="${esc(v.holdRate||'')}" placeholder="${esc(num(v.rate))}"><em>%</em></div><small class="hint">期間が空欄の場合は、積立が終わった時点の金額のまま計算します。年利が空欄の場合は、積立中と同じ年利で計算します。</small></div>`}
     <div class="invres" id="ivr-${v.id}"></div>
   </div>`}).join('');
 }
 function invResText(v,by){
   const yrs=num(v.years);if(!(yrs>0)||!invPrincipal(v))return'';
-  const st=invStart(v,by),endY=st+yrs,val=invValue(v,endY-by,by),prin=invPrincipal(v);
-  return `${st}年 → ${endY}年（${yrs}年間）　${isLump(v)?'投資額':'元本'} <b>${yen(prin)}</b> → ${isLump(v)?'運用終了時':'積立終了時'} <b class="${negc(val)}">${yen(val)}</b>`;
+  const st=invStart(v,by),endY=st+yrs,val=invValue(v,endY-by,by),prin=invPrincipal(v),h=holdYrs(v);
+  let t=`${st}年 → ${endY}年（${yrs}年間）　${isLump(v)?'投資額':'元本'} <b>${yen(prin)}</b> → ${isLump(v)?'運用終了時':'積立終了時'} <b class="${negc(val)}">${yen(val)}</b>`;
+  if(h>0){const v2=invValue(v,endY+h-by,by);t+=`<br>その後${h}年間 年利${holdRate(v)}%で運用 → ${endY+h}年 <b class="${negc(v2)}">${yen(v2)}</b>`}
+  return t;
 }
 function renderFlows(){
   const rowHTML=(k,x,i)=>`<div class="item">
@@ -701,11 +713,14 @@ function buildReport(){
   if(C.invs.length){
     body+=`<tr class="grp inv"><th colspan="${n+1}">運用資産（預金とは別）</th></tr>`;
     C.invs.forEach((v,vi)=>{
-      const st=invStart(v,C.by),endY=st+Math.max(0,num(v.years)),ew=isLump(v)?'運用':'積立';
+      const st=invStart(v,C.by),endY=st+Math.max(0,num(v.years)),endH=endY+holdYrs(v),ew=isLump(v)?'運用':'積立';
       body+=row(esc(v.label||('資産運用'+(vi+1)))+`<small style="display:block;font-weight:400;color:#555">${isLump(v)?'一括':'積立'}</small>`,cols.map(({r})=>{
         const bEnd=r.startYear+r.yrs;
         if(st>=bEnd)return `<td>—</td>`;
-        const note=endY>r.startYear&&endY<=bEnd?`${endY}年 ${ew}終了`:endY<=r.startYear?`${ew}終了後`:`${ew}中`;
+        const ns=[];
+        if(endY>r.startYear&&endY<=bEnd)ns.push(`${endY}年 ${ew}終了`);
+        if(endH>endY&&endH>r.startYear&&endH<=bEnd)ns.push(`${endH}年 運用終了`);
+        const note=ns.length?ns.join('<br>'):bEnd<=endY?`${ew}中`:bEnd<=endH?'運用中':'運用終了後';
         return `<td class="${negc(r.invEnd[vi])}">${yen(r.invEnd[vi])}<small>${note}</small></td>`;
       }),'invr');
     });
@@ -734,8 +749,8 @@ function buildReport(){
         </div>
     ${C.invs.length?`<h3>資産運用</h3>
     <table><thead><tr><th>名称</th><th>種類</th><th>期間</th><th>金額</th><th>年利</th><th>元本</th><th>終了時の資産</th></tr></thead><tbody>${C.invs.map((v,vi)=>{
-      const yrs=Math.max(0,num(v.years)),st=invStart(v,C.by),val=invValue(v,st+yrs-C.by,C.by);
-      return `<tr><td>${esc(v.label||('資産運用'+(vi+1)))}</td><td>${isLump(v)?'一括':'積立'}</td><td>${st}年 → ${st+yrs}年（${yrs}年間）</td><td class="n">${isLump(v)?yen(num(v.amount)):yen(num(v.monthly))+'/月'}</td><td class="n">${num(v.rate)}%</td><td class="n">${yen(invPrincipal(v))}</td><td class="n ${negc(val)}">${yen(val)}</td></tr>`;
+      const yrs=Math.max(0,num(v.years)),st=invStart(v,C.by),h=holdYrs(v),val=invValue(v,st+yrs+h-C.by,C.by);
+      return `<tr><td>${esc(v.label||('資産運用'+(vi+1)))}</td><td>${isLump(v)?'一括':'積立'}</td><td>${st}年 → ${st+yrs}年（${yrs}年間）${h>0?`<br>その後${h}年間 年利${holdRate(v)}%で運用（→ ${st+yrs+h}年）`:''}</td><td class="n">${isLump(v)?yen(num(v.amount)):yen(num(v.monthly))+'/月'}</td><td class="n">${num(v.rate)}%</td><td class="n">${yen(invPrincipal(v))}</td><td class="n ${negc(val)}">${yen(val)}</td></tr>`;
     }).join('')}</tbody></table>`:''}
       </div>
     </div>
@@ -819,7 +834,7 @@ document.addEventListener('click',e=>{
     case'delFlow':{const key=id==='fi'?'incRows':'expRows';S[key]=S[key].filter(x=>x.id!==v);break}
     case'addIncome':fm(id).incomes.push({id:nid(),amount:'',fromAge:'',toAge:''});break;
     case'delIncome':{const m=fm(id);m.incomes=m.incomes.filter(x=>x.id!==v);break}
-    case'addInvest':S.invests.push({id:nid(),kind:'tsumitate',label:'',start:'',years:'',monthly:'',amount:'',rate:''});break;
+    case'addInvest':S.invests.push({id:nid(),kind:'tsumitate',label:'',start:'',years:'',hold:'',holdRate:'',monthly:'',amount:'',rate:''});break;
     case'ivkind':{const v=S.invests.find(x=>x.id===id);v.kind=t.dataset.v;break}
     case'delInvest':S.invests=S.invests.filter(x=>x.id!==id);break;
     case'addAsset':fm(id).assets.push({id:nid(),label:'',amount:''});break;
